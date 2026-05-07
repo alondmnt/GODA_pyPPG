@@ -2,10 +2,11 @@ import pandas as pd
 
 import pyPPG
 
-from pyPPG.ppg_bm.ppg_sig import get_ppg_sig
-from pyPPG.ppg_bm.sig_ratios import get_sig_ratios
-from pyPPG.ppg_bm.ppg_derivs import get_ppg_derivs
-from pyPPG.ppg_bm.derivs_ratios import get_derivs_ratios
+from pyPPG.ppg_bm.ppg_sig import get_ppg_sig, BIOMARKERS_LST as _LST_PPG_SIG
+from pyPPG.ppg_bm.sig_ratios import get_sig_ratios, BIOMARKERS_LST as _LST_SIG_RATIOS
+from pyPPG.ppg_bm.ppg_derivs import get_ppg_derivs, BIOMARKERS_LST as _LST_PPG_DERIVS
+from pyPPG.ppg_bm.derivs_ratios import get_derivs_ratios, BIOMARKERS_LST as _LST_DERIVS_RATIOS
+from pyPPG.ppg_bm.bm_extraction import get_biomarkers as _bm_extract
 from pyPPG.ppg_bm.statistics import get_statistics
 
 class BmCollection:
@@ -46,14 +47,26 @@ class BmCollection:
         s=self.s
         fp = self.fp
 
-        ## Get Biomarkers
-        pw_ppg_sig, bm_ppg_sig, def_ppg_sig = get_ppg_sig(s, fp)
-        pw_sig_ratios, bm_sig_ratios, def_sig_ratios = get_sig_ratios(s, fp)
-        pw_ppg_derivs, bm_ppg_derivs, def_ppg_derivs = get_ppg_derivs(s, fp)
-        pw_derivs_ratios, bm_derivs_ratios, def_derivs_ratios = get_derivs_ratios(s, fp)
+        ## Get Biomarkers — single pass over beats.
+        # The four sibling get_X helpers each ran their own per-beat loop and
+        # rebuilt BmExctator from scratch every beat, doing the per-beat
+        # fiducial decomposition (1st/2nd/3rd-derivative landmark detection)
+        # four redundant times. Concatenate the four definition tables and
+        # invoke the extractor once with the union; then slice the result
+        # into the four category frames by column name.
+        all_lst = pd.concat(
+            [_LST_PPG_SIG, _LST_SIG_RATIOS, _LST_PPG_DERIVS, _LST_DERIVS_RATIOS],
+            ignore_index=True,
+        )
+        pw, bm_all = _bm_extract(s, fp, all_lst.name)
+
+        bm_ppg_sig       = bm_all[_LST_PPG_SIG.name.tolist()]
+        bm_sig_ratios    = bm_all[_LST_SIG_RATIOS.name.tolist()]
+        bm_ppg_derivs    = bm_all[_LST_PPG_DERIVS.name.tolist()]
+        bm_derivs_ratios = bm_all[_LST_DERIVS_RATIOS.name.tolist()]
 
         bm_vals={'ppg_sig': bm_ppg_sig , 'sig_ratios': bm_sig_ratios, 'ppg_derivs': bm_ppg_derivs, 'derivs_ratios': bm_derivs_ratios}
-        bm_defs = {'ppg_sig': def_ppg_sig, 'sig_ratios': def_sig_ratios, 'ppg_derivs': def_ppg_derivs, 'derivs_ratios': def_derivs_ratios}
+        bm_defs = {'ppg_sig': _LST_PPG_SIG, 'sig_ratios': _LST_SIG_RATIOS, 'ppg_derivs': _LST_PPG_DERIVS, 'derivs_ratios': _LST_DERIVS_RATIOS}
 
         ## Get Statistics
         if get_stat:
@@ -65,7 +78,7 @@ class BmCollection:
         BM_keys = bm_vals.keys()
         for key in BM_keys:
             bm_vals[key] = bm_vals[key].rename_axis('Index of pulse')
-            bm_vals[key].insert(0,'TimeStamp',pw_ppg_sig.onset)
+            bm_vals[key].insert(0,'TimeStamp',pw.onset)
             bm_defs[key] = bm_defs[key].rename_axis('No. biomarkers')
             if get_stat: bm_stats[key] = bm_stats[key].rename_axis('Statistics')
 
