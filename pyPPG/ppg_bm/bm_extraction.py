@@ -1233,8 +1233,13 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
     ppg=s.ppg
     data = DotMap()
 
-    df = pd.DataFrame(columns=['onset','offset','peak'])
-    df_biomarkers = pd.DataFrame(columns=biomarkers_lst)
+    # Collect rows in lists; build DataFrames once at the end.
+    # Avoids the O(N^2) cost of repeated `df.loc[i] = …` insertions.
+    bm_rows = []
+    bm_index = []
+    fid_rows = []
+    fid_index = []
+
     peaks = fp.sp.values
     onsets = fp.on.values
     offsets = fp.off.values
@@ -1277,11 +1282,15 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
                 temp_fiducials[nan_fidu] = np.nan
                 biomarkers_extractor = BmExctator(data, peak_value, peak_time, next_peak_value, next_peak_time, onsets_values, onsets_times, fs, biomarkers_lst,temp_fiducials)
                 biomarkers_vec = biomarkers_extractor.get_biomarker_extract_func()
-                lst = list(biomarkers_vec)
-                df_biomarkers.loc[i] = lst
-                df.loc[i] = {'onset':onset, 'offset':offset, 'peak': peak}
+                bm_rows.append(list(biomarkers_vec))
+                bm_index.append(i)
+                fid_rows.append({'onset': onset, 'offset': offset, 'peak': peak})
+                fid_index.append(i)
             except:
                 pass
         # else:
         #     print("no more peaks")
+
+    df_biomarkers = pd.DataFrame(bm_rows, columns=biomarkers_lst, index=bm_index)
+    df = pd.DataFrame(fid_rows, columns=['onset','offset','peak'], index=fid_index)
     return df, df_biomarkers
