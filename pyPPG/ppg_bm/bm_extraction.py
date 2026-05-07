@@ -315,9 +315,9 @@ class BmExctator:
             :param val: the value to be compared with
             :return: index: the index of the value closest to the arg value
             """
-        tmp_vec = np.array([vec[i]-val for i in range(0, len(vec))])
-        index = self._find_nearest(tmp_vec, 0)
-        return index
+        # Vectorised: avoid per-element Python loop + intermediate list allocation.
+        # Equivalent to (np.abs(np.array([vec[i]-val for ...]))).argmin().
+        return int(np.abs(np.asarray(vec) - val).argmin())
 
     def _getSysTime_from_val(self, val):
         """ get the time of a value in the PPG waveform  data vector
