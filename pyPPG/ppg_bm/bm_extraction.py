@@ -225,8 +225,8 @@ class BmExctator:
         :return: Tdp: Time from PPG onset to the Diastolic Peak on PPG
         """
 
-        dn = (self.fiducials.dn-self.fiducials.on).values[0]
-        dp = (self.fiducials.dp-self.fiducials.on).values[0]
+        dn = self.fiducials['dn'] - self.fiducials['on']
+        dp = self.fiducials['dp'] - self.fiducials['on']
         Tdn = dn / self.sample_rate
         Tdp = dp / self.sample_rate
 
@@ -242,9 +242,9 @@ class BmExctator:
         :return: Tw: Time from PPG onset to the first maximum peak after v on PPG'
         """
 
-        u = (self.fiducials.u-self.fiducials.on).values[0]
-        v = (self.fiducials.v-self.fiducials.on).values[0]
-        w = (self.fiducials.w - self.fiducials.on).values[0]
+        u = self.fiducials['u'] - self.fiducials['on']
+        v = self.fiducials['v'] - self.fiducials['on']
+        w = self.fiducials['w'] - self.fiducials['on']
         Tu = u / self.sample_rate
         Tv = v / self.sample_rate
         Tw = w / self.sample_rate
@@ -268,12 +268,12 @@ class BmExctator:
         :return: Tf: Time from PPG onset to the first minimum pits after e on PPG"
         """
 
-        a = (self.fiducials.a-self.fiducials.on).values[0]
-        b = (self.fiducials.b-self.fiducials.on).values[0]
-        c = (self.fiducials.c-self.fiducials.on).values[0]
-        d = (self.fiducials.d-self.fiducials.on).values[0]
-        e = (self.fiducials.e-self.fiducials.on).values[0]
-        f = (self.fiducials.f-self.fiducials.on).values[0]
+        a = self.fiducials['a'] - self.fiducials['on']
+        b = self.fiducials['b'] - self.fiducials['on']
+        c = self.fiducials['c'] - self.fiducials['on']
+        d = self.fiducials['d'] - self.fiducials['on']
+        e = self.fiducials['e'] - self.fiducials['on']
+        f = self.fiducials['f'] - self.fiducials['on']
         Ta = a / self.sample_rate
         Tb = b / self.sample_rate
         Tc = c / self.sample_rate
@@ -292,8 +292,8 @@ class BmExctator:
         :return: Tp2: Time from PPG onset to last local minimum before d, if c = d, then the first local minimum after d on PPG'"
         """
 
-        p1 = (self.fiducials.p1-self.fiducials.on).values[0]
-        p2 = (self.fiducials.p2-self.fiducials.on).values[0]
+        p1 = self.fiducials['p1'] - self.fiducials['on']
+        p2 = self.fiducials['p2'] - self.fiducials['on']
         Tp1 = p1 / self.sample_rate
         Tp2 = p2 / self.sample_rate
 
@@ -1244,6 +1244,14 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
     onsets = fp.on.values
     offsets = fp.off.values
 
+    # Pre-extract fiducial columns once; per-beat lookup is a dict of scalars
+    # rather than a fresh 1-row DataFrame. Use `.values` (not `.to_numpy()`)
+    # because the fiducial columns are nullable Int64 — `to_numpy()` would
+    # upcast to float64 in the presence of any NaN, breaking integer indexing
+    # of segment_ppg downstream. `.values` preserves IntegerArray, so non-NaN
+    # cells yield np.int64 and NaN cells yield pd.NA (NaN-propagating).
+    fid_arrays = {k: getattr(fp, k).values for k in vars(fp).keys()}
+
     for i in range(len(onsets)):
         onset = onsets[i]
         offset = offsets[i]
@@ -1256,7 +1264,11 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
             continue
         peak = peak[0]
 
-        temp_fiducials = fp.get_row(i)
+        # Per-cell pd.NA → np.nan: keeps non-NaN cells as np.int64 (so
+        # segment_ppg[idx] works) while letting NaN cells propagate as float
+        # NaN through arithmetic (matches baseline `(...)values[0]` semantics
+        # after the explicit NaN normalisation that lived in the old pipeline).
+        temp_fiducials = {k: (np.nan if (v := arr[i]) is pd.NA else v) for k, arr in fid_arrays.items()}
 
         peak_value = ppg[peak]
         peak_time = peak / fs
@@ -1278,8 +1290,8 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
             next_peak_time = peaks[idx + 1] / fs
             next_peak_time = next_peak_time[0]
             try:
-                nan_fidu=temp_fiducials.columns[np.where(temp_fiducials.isna())[1]]
-                temp_fiducials[nan_fidu] = np.nan
+                # NaN preservation: numpy scalar arithmetic propagates NaN naturally,
+                # so the previous `temp_fiducials[nan_fidu] = np.nan` round-trip is unnecessary.
                 biomarkers_extractor = BmExctator(data, peak_value, peak_time, next_peak_value, next_peak_time, onsets_values, onsets_times, fs, biomarkers_lst,temp_fiducials)
                 biomarkers_vec = biomarkers_extractor.get_biomarker_extract_func()
                 bm_rows.append(list(biomarkers_vec))
