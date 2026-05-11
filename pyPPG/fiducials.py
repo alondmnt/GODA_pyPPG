@@ -1159,86 +1159,105 @@ class FpCollection:
                 - fiducials: a dictionary where the key is the name of the fiducial pints and the value is the list of fiducial points
         """
 
-        for i in range(0,len(fiducials.on)):
+        # Snapshot each fiducial column as a mutable float64 array. The
+        # per-beat loop hammered DataFrame setitem (~5000 _setitem_with_indexer
+        # calls on a 30-min slice); array mutation avoids that overhead and
+        # lets NaN sentinels propagate naturally through arithmetic. Cast
+        # back to nullable Int64 at function exit to preserve dtype contract.
+        cols = list(fiducials.columns)
+        arrs = {col: fiducials[col].to_numpy(dtype='float64', na_value=np.nan) for col in cols}
+        on, sp, dn, dp_arr = arrs['on'], arrs['sp'], arrs['dn'], arrs['dp']
+        a, e, f = arrs['a'], arrs['e'], arrs['f']
+        u, v, w = arrs['u'], arrs['v'], arrs['w']
+
+        for i in range(0, len(on)):
 
             # Correct onset
             if correction.on[0]:
                 try:
                     win_onr = self.fs * 0.005
-                    if fiducials.on[i]>win_onr:
+                    if on[i] > win_onr:
                         win_onl = win_onr
                     else:
-                        win_onl = fiducials.on[i]
+                        win_onl = on[i]
 
-                    min_loc = np.argmin(self.ppg[fiducials.on[i]-win_onl:fiducials.on[i]+win_onr]) + fiducials.on[i]
-                    if fiducials.on[i] != min_loc:
+                    min_loc = np.argmin(self.ppg[on[i]-win_onl:on[i]+win_onr]) + on[i]
+                    if on[i] != min_loc:
 
-                        if fiducials.a[i] > self.fs*0.075:
+                        if a[i] > self.fs*0.075:
                             win_a = int(self.fs*0.075)
                         else:
-                            win_a = int(fiducials.a[i])
+                            win_a = int(a[i])
 
-                        fiducials.on[i] = np.argmax(self.jpg[int(fiducials.a[i]) - win_a:int(fiducials.a[i])]) + int(fiducials.a[i]) - win_a
+                        on[i] = np.argmax(self.jpg[int(a[i]) - win_a:int(a[i])]) + int(a[i]) - win_a
                 except:
                     pass
 
             # Correct dicrotic notch
             if correction.dn[0]:
                 try:
-                    temp_segment = self.ppg[int(fiducials.sp[i]):int(fiducials.dp[i])]
-                    min_dn = find_peaks(-temp_segment)[0] + fiducials.sp[i]
-                    diff_dn = abs(min_dn - fiducials.dp[i])
+                    temp_segment = self.ppg[int(sp[i]):int(dp_arr[i])]
+                    min_dn = find_peaks(-temp_segment)[0] + sp[i]
+                    diff_dn = abs(min_dn - dp_arr[i])
                     if len(min_dn) > 0 and diff_dn > round(self.fs / 100):
-                        fiducials.dn[i] = min_dn
+                        dn[i] = min_dn
                         try:
-                            strt_dn = int(fiducials.sp[i])
-                            stp_dn = int(fiducials.f[i])
-                            fiducials.dn[i] = find_peaks(-self.ppg[strt_dn:stp_dn])[0][-1] + strt_dn
-                            if fiducials.dn[i] > min_dn:
-                                fiducials.dn[i] = min_dn
+                            strt_dn = int(sp[i])
+                            stp_dn = int(f[i])
+                            dn[i] = find_peaks(-self.ppg[strt_dn:stp_dn])[0][-1] + strt_dn
+                            if dn[i] > min_dn:
+                                dn[i] = min_dn
                         except:
-                            strt_dn = fiducials.e[i]
-                            stp_dn = fiducials.f[i]
-                            fiducials.dn[i] = np.argmin(self.jpg[strt_dn:stp_dn]) + strt_dn
-                            if fiducials.dn[i] > min_dn:
-                                fiducials.dn[i] = min_dn
+                            # Slice cast preserves original behaviour: e/f were
+                            # int64 Series scalars upstream (slicing worked); as
+                            # float64 array scalars they would raise TypeError.
+                            strt_dn = int(e[i])
+                            stp_dn = int(f[i])
+                            dn[i] = np.argmin(self.jpg[strt_dn:stp_dn]) + strt_dn
+                            if dn[i] > min_dn:
+                                dn[i] = min_dn
 
                 except:
                     pass
 
             # Correct w-point
             if correction.w[0]:
-                if fiducials.w[i] > fiducials.f[i]:
-                    fiducials.loc[i, 'w'] = fiducials.f[i]
+                if w[i] > f[i]:
+                    w[i] = f[i]
 
-                if fiducials.w[i] < fiducials.e[i]:
+                if w[i] < e[i]:
                     try:
-                        fiducials.loc[i, 'w'] = [np.argmax(self.vpg[int(fiducials.e[i]):int(fiducials.f[i])]) + fiducials.e[i]]
+                        w[i] = np.argmax(self.vpg[int(e[i]):int(f[i])]) + e[i]
                     except:
                         pass
 
             # Correct v-point and w-point
             if correction.v[0] and correction.w[0]:
-                if fiducials.v[i] > fiducials.e[i]:
+                if v[i] > e[i]:
                     try:
-                        fiducials.loc[i, 'v'] = [np.argmin(self.vpg[int(fiducials.u[i]):int(fiducials.e[i])]) + fiducials.u[i]]
-                        fiducials.loc[i, 'w'] = [find_peaks(self.vpg[int(fiducials.v[i]):int(fiducials.f[i])])[0][0] + fiducials.v[i]]
+                        v[i] = np.argmin(self.vpg[int(u[i]):int(e[i])]) + u[i]
+                        w[i] = find_peaks(self.vpg[int(v[i]):int(f[i])])[0][0] + v[i]
                     except:
                         pass
 
             # Correct f-point
             if correction.f[0]:
                 try:
-                    temp_end=int(np.diff(fiducials.on[i:i+2])*0.8)
-                    temp_segment=self.apg[int(fiducials.e[i]):int(fiducials.on[i]+temp_end)]
-                    min_f=np.argmin(temp_segment)+fiducials.e[i]
+                    temp_end = int(np.diff(on[i:i+2])*0.8)
+                    temp_segment = self.apg[int(e[i]):int(on[i]+temp_end)]
+                    min_f = np.argmin(temp_segment) + e[i]
 
-                    if fiducials.w[i] > fiducials.f[i]:
-                        fiducials.f[i] = min_f
+                    if w[i] > f[i]:
+                        f[i] = min_f
                 except:
                     pass
 
-        # Correct diastolic peak
+        # Write arrays back as nullable Int64 columns (preserves the dtype
+        # contract consumed by downstream code, e.g. biomarker extraction).
+        for col in cols:
+            fiducials[col] = pd.array(arrs[col], dtype='Int64')
+
+        # Correct diastolic peak — operates on full columns; expects Series.
         if correction.dp[0]:
             try:
                 fiducials.dp = self.get_diastolic_peak(fiducials.on, fiducials.dn, fiducials.e)
