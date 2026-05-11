@@ -3,9 +3,7 @@ import pyPPG
 import pandas as pd
 from pyPPG.ppg_bm.bm_extraction import get_biomarkers
 
-# Hoisted to module level so BmCollection can read the definition table
-# without invoking the per-beat extraction loop.
-_BIOMARKERS_DATA = [
+BIOMARKERS_LST = pd.DataFrame([
     ["IPR",          "Instantaneous pulse rate, 60 / Tpi", "[%]"],
     ["Tsys/Tdia",    "Ratio of the systolic time vs. the diastolic time", "[%]"],
     ["Tpw25/Tpi",    "Ratio of the pulse width at 25% of the systolic peak amplitude vs. the pulse interval", "[%]"],
@@ -28,8 +26,7 @@ _BIOMARKERS_DATA = [
     ["Tsp/Asp",      "Ratio of the systolic peak time vs. the systolic peak amplitude", "[nu]"],
     ["Asp/deltaT",   "Stiffness index, the ratio of the systolic peak amplitude vs. the time delay", "[nu]"],
     ["Asp/(Tpi-Tsp)","Ratio of the systolic peak amplitude vs. the difference between the pulse interval and systolic peak time ", "[nu]"],
-]
-BIOMARKERS_LST = pd.DataFrame(_BIOMARKERS_DATA, columns=['name', 'definition', 'unit'])
+], columns=['name', 'definition', 'unit'])
 
 
 ###########################################################################

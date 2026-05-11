@@ -47,13 +47,8 @@ class BmCollection:
         s=self.s
         fp = self.fp
 
-        ## Get Biomarkers — single pass over beats.
-        # The four sibling get_X helpers each ran their own per-beat loop and
-        # rebuilt BmExctator from scratch every beat, doing the per-beat
-        # fiducial decomposition (1st/2nd/3rd-derivative landmark detection)
-        # four redundant times. Concatenate the four definition tables and
-        # invoke the extractor once with the union; then slice the result
-        # into the four category frames by column name.
+        # Single per-beat loop with the union of all 4 category definitions
+        # (the sibling get_X helpers each looped independently otherwise).
         all_lst = pd.concat(
             [_LST_PPG_SIG, _LST_SIG_RATIOS, _LST_PPG_DERIVS, _LST_DERIVS_RATIOS],
             ignore_index=True,

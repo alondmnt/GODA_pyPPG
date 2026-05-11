@@ -315,9 +315,7 @@ class BmExctator:
             :param val: the value to be compared with
             :return: index: the index of the value closest to the arg value
             """
-        # Vectorised: avoid per-element Python loop + intermediate list allocation.
-        # Equivalent to (np.abs(np.array([vec[i]-val for ...]))).argmin().
-        return int(np.abs(np.asarray(vec) - val).argmin())
+        return np.abs(np.asarray(vec) - val).argmin()
 
     def _getSysTime_from_val(self, val):
         """ get the time of a value in the PPG waveform  data vector
@@ -1233,23 +1231,19 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
     ppg=s.ppg
     data = DotMap()
 
-    # Collect rows in lists; build DataFrames once at the end.
-    # Avoids the O(N^2) cost of repeated `df.loc[i] = …` insertions.
+    # Collect rows in lists; build DataFrames once at the end (avoids O(N^2)
+    # cost of per-iteration `df.loc[i] = …` insertions).
     bm_rows = []
-    bm_index = []
     fid_rows = []
-    fid_index = []
+    kept_index = []
 
     peaks = fp.sp.values
     onsets = fp.on.values
     offsets = fp.off.values
 
-    # Pre-extract fiducial columns once; per-beat lookup is a dict of scalars
-    # rather than a fresh 1-row DataFrame. Use `.values` (not `.to_numpy()`)
-    # because the fiducial columns are nullable Int64 — `to_numpy()` would
-    # upcast to float64 in the presence of any NaN, breaking integer indexing
-    # of segment_ppg downstream. `.values` preserves IntegerArray, so non-NaN
-    # cells yield np.int64 and NaN cells yield pd.NA (NaN-propagating).
+    # `.values` (not `.to_numpy()`) on nullable Int64 columns: `.to_numpy()`
+    # would upcast to float64 if any cell is NaN, breaking integer indexing of
+    # segment_ppg downstream.
     fid_arrays = {k: getattr(fp, k).values for k in vars(fp).keys()}
 
     for i in range(len(onsets)):
@@ -1264,11 +1258,12 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
             continue
         peak = peak[0]
 
-        # Per-cell pd.NA → np.nan: keeps non-NaN cells as np.int64 (so
-        # segment_ppg[idx] works) while letting NaN cells propagate as float
-        # NaN through arithmetic (matches baseline `(...)values[0]` semantics
-        # after the explicit NaN normalisation that lived in the old pipeline).
-        temp_fiducials = {k: (np.nan if (v := arr[i]) is pd.NA else v) for k, arr in fid_arrays.items()}
+        # Non-NaN cells stay np.int64 (so segment_ppg[idx] works); NaN cells
+        # become float NaN so arithmetic propagates cleanly.
+        temp_fiducials = {}
+        for k, arr in fid_arrays.items():
+            v = arr[i]
+            temp_fiducials[k] = np.nan if pd.isna(v) else v
 
         peak_value = ppg[peak]
         peak_time = peak / fs
@@ -1290,19 +1285,16 @@ def get_biomarkers(s: pyPPG.PPG, fp: pyPPG.Fiducials, biomarkers_lst):
             next_peak_time = peaks[idx + 1] / fs
             next_peak_time = next_peak_time[0]
             try:
-                # NaN preservation: numpy scalar arithmetic propagates NaN naturally,
-                # so the previous `temp_fiducials[nan_fidu] = np.nan` round-trip is unnecessary.
                 biomarkers_extractor = BmExctator(data, peak_value, peak_time, next_peak_value, next_peak_time, onsets_values, onsets_times, fs, biomarkers_lst,temp_fiducials)
                 biomarkers_vec = biomarkers_extractor.get_biomarker_extract_func()
                 bm_rows.append(list(biomarkers_vec))
-                bm_index.append(i)
                 fid_rows.append({'onset': onset, 'offset': offset, 'peak': peak})
-                fid_index.append(i)
+                kept_index.append(i)
             except:
                 pass
         # else:
         #     print("no more peaks")
 
-    df_biomarkers = pd.DataFrame(bm_rows, columns=biomarkers_lst, index=bm_index)
-    df = pd.DataFrame(fid_rows, columns=['onset','offset','peak'], index=fid_index)
+    df_biomarkers = pd.DataFrame(bm_rows, columns=biomarkers_lst, index=kept_index)
+    df = pd.DataFrame(fid_rows, columns=['onset','offset','peak'], index=kept_index)
     return df, df_biomarkers

@@ -3,9 +3,7 @@ import pyPPG
 import pandas as pd
 from pyPPG.ppg_bm.bm_extraction import get_biomarkers
 
-# Hoisted to module level so BmCollection can read the definition table
-# without invoking the per-beat extraction loop.
-_BIOMARKERS_DATA = [
+BIOMARKERS_LST = pd.DataFrame([
     ["Tpi",   "Pulse interval, the time between the pulse onset and pulse offset", "[s]"],
     ["Tpp",   "Peak-to-peak interval, the time between two consecutive systolic peaks", "[s]"],
     ["Tsys",  "Systolic time, the time between the pulse onset and dicrotic notch", "[s]"],
@@ -41,8 +39,7 @@ _BIOMARKERS_DATA = [
     ["AUCpi", "Area under pulse interval curve, the area under the pulse wave between pulse onset and pulse offset", "[nu]"],
     ["AUCsys","Area under systolic curve, the area under the pulse wave between the pulse onset and the dicrotic notch", "[nu]"],
     ["AUCdia","Area under diastolic curve, the area under the pulse wave between the dicrotic notch and pulse offset", "[nu]"],
-]
-BIOMARKERS_LST = pd.DataFrame(_BIOMARKERS_DATA, columns=['name', 'definition', 'unit'])
+], columns=['name', 'definition', 'unit'])
 
 
 ###########################################################################
