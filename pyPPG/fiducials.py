@@ -1097,10 +1097,19 @@ class FpCollection:
         nan_v[:] = np.NaN
         p1, p2 = copy.deepcopy(nan_v), copy.deepcopy(nan_v)
 
+        # Pre-extract the four apg columns once. The per-beat filter below
+        # used `apg_fp.X > onsets[i]` on Series, allocating a fresh Series
+        # per comparison per beat. Snapshotting to numpy float64 arrays
+        # turns each filter into pure numpy.
+        b_arr = apg_fp.b.to_numpy()
+        c_arr = apg_fp.c.to_numpy()
+        d_arr = apg_fp.d.to_numpy()
+        e_arr = apg_fp.e.to_numpy()
+
         for i in range(0, len(onsets) - 1):
             try:
                 # p1 fiducial point
-                ref_b = apg_fp.b[np.squeeze(np.where(np.logical_and(apg_fp.b > onsets[i], apg_fp.b < onsets[i + 1])))]
+                ref_b = b_arr[np.squeeze(np.where((b_arr > onsets[i]) & (b_arr < onsets[i + 1])))]
                 if ref_b.size == 0:
                     ref_b = onsets[i]
 
@@ -1116,8 +1125,8 @@ class FpCollection:
 
                 # p2 fiducial point
                 ref_start = p1[i]
-                ref_c = apg_fp.c[np.squeeze(np.where(np.logical_and(apg_fp.c > onsets[i], apg_fp.c < onsets[i + 1])))]
-                ref_d = apg_fp.d[np.squeeze(np.where(np.logical_and(apg_fp.d > onsets[i], apg_fp.d < onsets[i + 1])))]
+                ref_c = c_arr[np.squeeze(np.where((c_arr > onsets[i]) & (c_arr < onsets[i + 1])))]
+                ref_d = d_arr[np.squeeze(np.where((d_arr > onsets[i]) & (d_arr < onsets[i + 1])))]
 
                 if ref_d > ref_c:
                     ref_end = ref_d
@@ -1126,7 +1135,7 @@ class FpCollection:
                     ref_start = ref_c
                     ref_end = onsets[i + 1]
                     min_ind = 0
-                elif apg_fp.e.size > 0:
+                elif e_arr.size > 0:
                     ref_end = onsets[i + 1]
                     min_ind = 0
 
